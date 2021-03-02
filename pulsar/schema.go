@@ -219,6 +219,57 @@ func (as *AvroSchema) GetSchemaInfo() *SchemaInfo {
 	return &as.SchemaInfo
 }
 
+type AvroAutoSchema struct {
+	AvroCodec
+	SchemaInfo
+}
+
+func NewAvroAutoSchema(avroSchemaDef string, properties map[string]string) *AvroAutoSchema {
+	as := new(AvroAutoSchema)
+	avroCodec, err := initAvroCodec(avroSchemaDef)
+	if err != nil {
+		log.Fatalf("init codec error:%v", err)
+	}
+	schemaDef := NewSchemaDefinition(avroCodec)
+	as.AvroCodec.Codec = schemaDef.Codec
+	as.SchemaInfo.Schema = schemaDef.Codec.Schema()
+	as.SchemaInfo.Type = AVRO
+	as.SchemaInfo.Name = "Avro"
+	as.SchemaInfo.Properties = properties
+	return as
+}
+
+func (as *AvroAutoSchema) Encode(data interface{}) ([]byte, error) {
+	return data.([]byte), nil
+}
+
+func (as *AvroAutoSchema) Decode(data []byte, v interface{}) error {
+	native, _, err := as.Codec.NativeFromBinary(data)
+	if err != nil {
+		log.Errorf("convert binary Avro data back to native Go form error:%s", err.Error())
+		return err
+	}
+	textual, err := as.Codec.TextualFromNative(nil, native)
+	if err != nil {
+		log.Errorf("convert native Go form to textual Avro data error:%s", err.Error())
+		return err
+	}
+
+	if json.Valid(textual) {
+		log.Errorf("not valid json")
+		return err
+	}
+	return nil
+}
+
+func (as *AvroAutoSchema) Validate(message []byte) error {
+	return as.Decode(message, nil)
+}
+
+func (as *AvroAutoSchema) GetSchemaInfo() *SchemaInfo {
+	return &as.SchemaInfo
+}
+
 type StringSchema struct {
 	SchemaInfo
 }

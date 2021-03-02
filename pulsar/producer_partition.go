@@ -195,13 +195,13 @@ func (p *partitionProducer) grabCnx() error {
 		p.log.WithError(err).Error("Failed to create producer")
 		return err
 	}
-
+	schemaVersion := res.Response.ProducerSuccess.GetSchemaVersion()
 	p.producerName = res.Response.ProducerSuccess.GetProducerName()
 	if p.options.DisableBatching {
 		provider, _ := GetBatcherBuilderProvider(DefaultBatchBuilder)
 		p.batchBuilder, err = provider(p.options.BatchingMaxMessages, p.options.BatchingMaxSize,
 			p.producerName, p.producerID, pb.CompressionType(p.options.CompressionType),
-			compression.Level(p.options.CompressionLevel),
+			compression.Level(p.options.CompressionLevel), schemaVersion,
 			p,
 			p.log)
 		if err != nil {
@@ -215,7 +215,7 @@ func (p *partitionProducer) grabCnx() error {
 
 		p.batchBuilder, err = provider(p.options.BatchingMaxMessages, p.options.BatchingMaxSize,
 			p.producerName, p.producerID, pb.CompressionType(p.options.CompressionType),
-			compression.Level(p.options.CompressionLevel),
+			compression.Level(p.options.CompressionLevel), schemaVersion,
 			p,
 			p.log)
 		if err != nil {
@@ -337,6 +337,13 @@ func (p *partitionProducer) internalSend(request *sendRequest) {
 		schemaPayload, err = p.options.Schema.Encode(msg.Value)
 		if err != nil {
 			return
+		}
+
+		if p.options.ValidatePayload {
+			err = p.options.Schema.Validate(schemaPayload)
+			if err != nil {
+				return
+			}
 		}
 	}
 

@@ -35,7 +35,7 @@ type BuffersPool interface {
 type BatcherBuilderProvider func(
 	maxMessages uint, maxBatchSize uint, producerName string, producerID uint64,
 	compressionType pb.CompressionType, level compression.Level,
-	bufferPool BuffersPool, logger log.Logger,
+	schemaVersion []byte, bufferPool BuffersPool, logger log.Logger,
 ) (BatchBuilder, error)
 
 // BatchBuilder is a interface of batch builders
@@ -98,7 +98,7 @@ type batchContainer struct {
 // newBatchContainer init a batchContainer
 func newBatchContainer(
 	maxMessages uint, maxBatchSize uint, producerName string, producerID uint64,
-	compressionType pb.CompressionType, level compression.Level,
+	compressionType pb.CompressionType, level compression.Level, schemaVersion []byte,
 	bufferPool BuffersPool, logger log.Logger,
 ) batchContainer {
 
@@ -116,7 +116,8 @@ func newBatchContainer(
 			},
 		),
 		msgMetadata: &pb.MessageMetadata{
-			ProducerName: &producerName,
+			ProducerName:  &producerName,
+			SchemaVersion: schemaVersion,
 		},
 		callbacks:           []interface{}{},
 		compressionProvider: getCompressionProvider(compressionType, level),
@@ -134,13 +135,13 @@ func newBatchContainer(
 // NewBatchBuilder init batch builder and return BatchBuilder pointer. Build a new batch message container.
 func NewBatchBuilder(
 	maxMessages uint, maxBatchSize uint, producerName string, producerID uint64,
-	compressionType pb.CompressionType, level compression.Level,
+	compressionType pb.CompressionType, level compression.Level, schemaVersion []byte,
 	bufferPool BuffersPool, logger log.Logger,
 ) (BatchBuilder, error) {
 
 	bc := newBatchContainer(
 		maxMessages, maxBatchSize, producerName, producerID, compressionType,
-		level, bufferPool, logger,
+		level, schemaVersion, bufferPool, logger,
 	)
 
 	return &bc, nil

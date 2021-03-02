@@ -19,6 +19,7 @@ package pulsar
 
 import (
 	"context"
+	"io/ioutil"
 	"log"
 	"testing"
 
@@ -45,7 +46,7 @@ var (
 
 func createClient() Client {
 	// create client
-	lookupURL := "pulsar://localhost:6650"
+	lookupURL := "pulsar://from-office.st.t-shield.com:6650"
 	client, err := NewClient(ClientOptions{
 		URL: lookupURL,
 	})
@@ -147,6 +148,7 @@ func TestAvroSchema(t *testing.T) {
 
 	// create producer
 	asProducer := NewAvroSchema(exampleSchemaDef, nil)
+
 	producer, err := client.CreateProducer(ProducerOptions{
 		Topic:  "avro-topic",
 		Schema: asProducer,
@@ -180,6 +182,56 @@ func TestAvroSchema(t *testing.T) {
 	assert.Equal(t, unobj.ID, 100)
 	assert.Equal(t, unobj.Name, "pulsar")
 	defer consumer.Close()
+}
+
+func TestAvroAutoSchema(t *testing.T) {
+	client := createClient()
+	defer client.Close()
+
+	activeSchemaString := `
+	  {
+	 "type": "record",
+	 "name": "ActiveSomePojo",
+	 "namespace": "cynet.avrotest",
+	 "fields": [
+	   {
+	     "name": "nice",
+	     "type": [
+	       "null",
+	       "string"
+	     ]
+	   },
+	   {
+	     "name": "number",
+	     "type": [
+	       "int",
+	       "null"
+	     ],
+	     "default": 123
+	   }
+	 ]
+	}`
+
+	topicName := "persistent://mktest/lele/belekker"
+	asProducer := NewAvroAutoSchema(activeSchemaString, nil)
+
+	producer, err := client.CreateProducer(ProducerOptions{
+		Topic:           topicName,
+		Schema:          asProducer,
+		ValidatePayload: true,
+	})
+
+	payload, err := ioutil.ReadFile("D:\\active-some-payload")
+	if err != nil {
+		log.Printf("Failed: %v", err)
+	}
+
+	assert.Nil(t, err)
+	if _, err := producer.Send(context.Background(), &ProducerMessage{
+		Value: payload,
+	}); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func TestStringSchema(t *testing.T) {

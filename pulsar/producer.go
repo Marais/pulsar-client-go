@@ -159,6 +159,8 @@ type ProducerOptions struct {
 	// - DefaultBatchBuilder
 	// - KeyBasedBatchBuilder
 	BatcherBuilderType
+
+	ValidatePayload bool
 }
 
 // Producer is used to publish messages on a topic
