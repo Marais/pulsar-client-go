@@ -98,8 +98,8 @@ type batchContainer struct {
 // newBatchContainer init a batchContainer
 func newBatchContainer(
 	maxMessages uint, maxBatchSize uint, producerName string, producerID uint64,
-	compressionType pb.CompressionType, level compression.Level, schemaVersion []byte,
-	bufferPool BuffersPool, logger log.Logger,
+	compressionType pb.CompressionType, level compression.Level,
+	schemaVersion []byte, bufferPool BuffersPool, logger log.Logger,
 ) batchContainer {
 
 	bc := batchContainer{
