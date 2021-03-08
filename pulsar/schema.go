@@ -255,8 +255,8 @@ func (as *AvroAutoSchema) Decode(data []byte, v interface{}) error {
 		return err
 	}
 
-	if json.Valid(textual) {
-		log.Errorf("not valid json")
+	if !json.Valid(textual) {
+		log.Errorf("Decode of textual: not valid json: %s", err)
 		return err
 	}
 	return nil

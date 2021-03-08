@@ -342,6 +342,7 @@ func (p *partitionProducer) internalSend(request *sendRequest) {
 		if p.options.ValidatePayload {
 			err = p.options.Schema.Validate(schemaPayload)
 			if err != nil {
+				p.log.Error("Validation failed for payload")
 				return
 			}
 		}
