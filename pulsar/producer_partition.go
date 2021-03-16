@@ -46,10 +46,12 @@ const (
 )
 
 var (
-	errFailAddBatch    = errors.New("message send failed")
-	errSendTimeout     = errors.New("message send timeout")
-	errSendQueueIsFull = errors.New("producer send queue is full")
-	errMessageTooLarge = errors.New("message size exceeds MaxMessageSize")
+	errFailAddBatch            = errors.New("message send failed")
+	errSendTimeout             = errors.New("message send timeout")
+	errSendQueueIsFull         = errors.New("producer send queue is full")
+	errMessageTooLarge         = errors.New("message size exceeds MaxMessageSize")
+	errMessageValidationFailed = errors.New("message validation failed")
+	errMessageEncodeFailed     = errors.New("message encode failed")
 
 	buffersPool sync.Pool
 )
@@ -336,13 +338,20 @@ func (p *partitionProducer) internalSend(request *sendRequest) {
 	if p.options.Schema != nil {
 		schemaPayload, err = p.options.Schema.Encode(msg.Value)
 		if err != nil {
+			request.callback(nil, request.msg, errMessageEncodeFailed)
+			p.log.WithError(errMessageEncodeFailed).
+				WithField("properties", msg.Properties).
+				Error()
 			return
 		}
 
 		if p.options.ValidatePayload {
 			err = p.options.Schema.Validate(schemaPayload)
 			if err != nil {
-				p.log.Error("Validation failed for payload")
+				request.callback(nil, request.msg, errMessageValidationFailed)
+				p.log.WithError(errMessageValidationFailed).
+					WithField("properties", msg.Properties).
+					Error()
 				return
 			}
 		}
