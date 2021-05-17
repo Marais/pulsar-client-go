@@ -302,7 +302,7 @@ func (c *connection) doHandshake() bool {
 			cmd.Error.GetMessage())
 		return false
 	}
-	if cmd.Connected.MaxMessageSize != nil {
+	if cmd.Connected.MaxMessageSize != nil && *cmd.Connected.MaxMessageSize > 0 {
 		c.log.Debug("Got MaxMessageSize from handshake response:", *cmd.Connected.MaxMessageSize)
 		c.maxMessageSize = *cmd.Connected.MaxMessageSize
 	} else {
@@ -331,8 +331,9 @@ func (c *connection) waitUntilReady() error {
 }
 
 func (c *connection) failLeftRequestsWhenClose() {
-	for req := range c.incomingRequestsCh {
-		c.internalSendRequest(req)
+	reqLen := len(c.incomingRequestsCh)
+	for i := 0; i < reqLen; i++ {
+		c.internalSendRequest(<-c.incomingRequestsCh)
 	}
 	close(c.incomingRequestsCh)
 }

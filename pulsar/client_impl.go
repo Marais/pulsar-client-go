@@ -18,7 +18,6 @@
 package pulsar
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -57,27 +56,27 @@ func newClient(options ClientOptions) (Client, error) {
 	}
 
 	if options.URL == "" {
-		return nil, newError(ResultInvalidConfiguration, "URL is required for client")
+		return nil, newError(InvalidConfiguration, "URL is required for client")
 	}
 
 	url, err := url.Parse(options.URL)
 	if err != nil {
 		logger.WithError(err).Error("Failed to parse service URL")
-		return nil, newError(ResultInvalidConfiguration, "Invalid service URL")
+		return nil, newError(InvalidConfiguration, "Invalid service URL")
 	}
 
 	var tlsConfig *internal.TLSOptions
 	switch url.Scheme {
-	case "pulsar":
+	case "pulsar", "http":
 		tlsConfig = nil
-	case "pulsar+ssl":
+	case "pulsar+ssl", "https":
 		tlsConfig = &internal.TLSOptions{
 			AllowInsecureConnection: options.TLSAllowInsecureConnection,
 			TrustCertsFilePath:      options.TLSTrustCertsFilePath,
 			ValidateHostname:        options.TLSValidateHostname,
 		}
 	default:
-		return nil, newError(ResultInvalidConfiguration, fmt.Sprintf("Invalid URL scheme '%s'", url.Scheme))
+		return nil, newError(InvalidConfiguration, fmt.Sprintf("Invalid URL scheme '%s'", url.Scheme))
 	}
 
 	var authProvider auth.Provider
@@ -88,7 +87,7 @@ func newClient(options ClientOptions) (Client, error) {
 	} else {
 		authProvider, ok = options.Authentication.(auth.Provider)
 		if !ok {
-			return nil, errors.New("invalid auth provider interface")
+			return nil, newError(AuthenticationError, "invalid auth provider interface")
 		}
 	}
 	err = authProvider.Init()
@@ -124,8 +123,27 @@ func newClient(options ClientOptions) (Client, error) {
 		log:     logger,
 		metrics: metrics,
 	}
-	c.rpcClient = internal.NewRPCClient(url, c.cnxPool, operationTimeout, logger, metrics)
-	c.lookupService = internal.NewLookupService(c.rpcClient, url, tlsConfig != nil, logger, metrics)
+	serviceNameResolver := internal.NewPulsarServiceNameResolver(url)
+
+	c.rpcClient = internal.NewRPCClient(url, serviceNameResolver, c.cnxPool, operationTimeout, logger, metrics)
+
+	switch url.Scheme {
+	case "pulsar", "pulsar+ssl":
+		c.lookupService = internal.NewLookupService(c.rpcClient, url, serviceNameResolver,
+			tlsConfig != nil, options.ListenerName, logger, metrics)
+	case "http", "https":
+		httpClient, err := internal.NewHTTPClient(url, serviceNameResolver, tlsConfig,
+			operationTimeout, logger, metrics, authProvider)
+		if err != nil {
+			return nil, newError(InvalidConfiguration, fmt.Sprintf("Failed to init http client with err: '%s'",
+				err.Error()))
+		}
+		c.lookupService = internal.NewHTTPLookupService(httpClient, url, serviceNameResolver,
+			tlsConfig != nil, logger, metrics)
+	default:
+		return nil, newError(InvalidConfiguration, fmt.Sprintf("Invalid URL scheme '%s'", url.Scheme))
+	}
+
 	c.handlers = internal.NewClientHandlers()
 
 	return c, nil
@@ -163,25 +181,14 @@ func (c *client) TopicPartitions(topic string) ([]string, error) {
 		return nil, err
 	}
 
-	id := c.rpcClient.NewRequestID()
-	res, err := c.rpcClient.RequestToAnyBroker(id, pb.BaseCommand_PARTITIONED_METADATA,
-		&pb.CommandPartitionedTopicMetadata{
-			RequestId: &id,
-			Topic:     &topicName.Name,
-		})
+	r, err := c.lookupService.GetPartitionedTopicMetadata(topic)
 	if err != nil {
 		return nil, err
 	}
-
-	r := res.Response.PartitionMetadataResponse
 	if r != nil {
-		if r.Error != nil {
-			return nil, newError(ResultLookupError, r.GetError().String())
-		}
-
-		if r.GetPartitions() > 0 {
-			partitions := make([]string, r.GetPartitions())
-			for i := 0; i < int(r.GetPartitions()); i++ {
+		if r.Partitions > 0 {
+			partitions := make([]string, r.Partitions)
+			for i := 0; i < r.Partitions; i++ {
 				partitions[i] = fmt.Sprintf("%s-partition-%d", topic, i)
 			}
 			return partitions, nil
@@ -194,6 +201,8 @@ func (c *client) TopicPartitions(topic string) ([]string, error) {
 
 func (c *client) Close() {
 	c.handlers.Close()
+	c.cnxPool.Close()
+	c.lookupService.Close()
 }
 
 func (c *client) namespaceTopics(namespace string) ([]string, error) {
@@ -208,7 +217,7 @@ func (c *client) namespaceTopics(namespace string) ([]string, error) {
 		return nil, err
 	}
 	if res.Response.Error != nil {
-		return []string{}, newError(ResultLookupError, res.Response.GetError().String())
+		return []string{}, newError(LookupError, res.Response.GetError().String())
 	}
 
 	return res.Response.GetTopicsOfNamespaceResponse.GetTopics(), nil

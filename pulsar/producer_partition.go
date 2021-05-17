@@ -19,7 +19,6 @@ package pulsar
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,12 +45,12 @@ const (
 )
 
 var (
-	errFailAddBatch            = errors.New("message send failed")
-	errSendTimeout             = errors.New("message send timeout")
-	errSendQueueIsFull         = errors.New("producer send queue is full")
-	errMessageTooLarge         = errors.New("message size exceeds MaxMessageSize")
-	errMessageValidationFailed = errors.New("message validation failed")
-	errMessageEncodeFailed     = errors.New("message encode failed")
+	errFailAddToBatch          = newError(AddToBatchFailed, "message add to batch failed")
+	errSendTimeout             = newError(TimeoutError, "message send timeout")
+	errSendQueueIsFull         = newError(ProducerQueueIsFull, "producer send queue is full")
+	errMessageTooLarge         = newError(MessageTooBig, "message size exceeds MaxMessageSize")
+	errMessageValidationFailed = newError(MessageValidationFailed, "message validation failed")
+	errMessageEncodeFailed     = newError(MessageEncodeFailed, "message encode failed")
 
 	buffersPool sync.Pool
 )
@@ -368,7 +367,7 @@ func (p *partitionProducer) internalSend(request *sendRequest) {
 		p.log.WithError(errMessageTooLarge).
 			WithField("size", len(payload)).
 			WithField("properties", msg.Properties).
-			Error()
+			Errorf("MaxMessageSize %d", int(p.cnx.GetMaxMessageSize()))
 		p.metrics.PublishErrorsMsgTooLarge.Inc()
 		return
 	}
@@ -414,13 +413,17 @@ func (p *partitionProducer) internalSend(request *sendRequest) {
 		msg.ReplicationClusters, deliverAt)
 	if !added {
 		// The current batch is full.. flush it and retry
-		p.internalFlushCurrentBatch()
+		if p.batchBuilder.IsMultiBatches() {
+			p.internalFlushCurrentBatches()
+		} else {
+			p.internalFlushCurrentBatch()
+		}
 
 		// after flushing try again to add the current payload
 		if ok := p.batchBuilder.Add(smm, p.sequenceIDGenerator, payload, request,
 			msg.ReplicationClusters, deliverAt); !ok {
 			p.publishSemaphore.Release()
-			request.callback(nil, request.msg, errFailAddBatch)
+			request.callback(nil, request.msg, errFailAddToBatch)
 			p.log.WithField("size", len(payload)).
 				WithField("properties", msg.Properties).
 				Error("unable to add message to batch")
@@ -561,6 +564,7 @@ func (p *partitionProducer) internalFlushCurrentBatches() {
 			continue
 		}
 		p.pendingQueue.Put(&pendingItem{
+			sentAt:       time.Now(),
 			batchData:    batchesData[i],
 			sequenceID:   sequenceIDs[i],
 			sendRequests: callbacks[i],

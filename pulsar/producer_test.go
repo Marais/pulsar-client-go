@@ -78,7 +78,7 @@ func TestProducerNoTopic(t *testing.T) {
 	assert.Nil(t, producer)
 	assert.NotNil(t, err)
 
-	assert.Equal(t, err.(*Error).Result(), ResultInvalidTopicName)
+	assert.Equal(t, InvalidTopicName, err.(*Error).Result())
 }
 
 func TestSimpleProducer(t *testing.T) {
@@ -621,7 +621,7 @@ func TestProducerMetadata(t *testing.T) {
 	}
 	producer, err := client.CreateProducer(ProducerOptions{
 		Topic:      topic,
-		Name:       "my-producer",
+		Name:       "meta-data-producer",
 		Properties: props,
 	})
 	if err != nil {
